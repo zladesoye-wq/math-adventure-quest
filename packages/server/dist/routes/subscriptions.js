@@ -13,13 +13,13 @@ router.get('/', auth_1.authenticate, async (req, res) => {
         const parentId = req.user.parentId || req.user.id;
         const result = await database_1.default.query('SELECT * FROM subscriptions WHERE parent_id = $1', [parentId]);
         if (result.rows.length === 0) {
-            return res.json({ plan_type: 'free', status: 'active' });
+            return res.json({ success: true, data: { plan_type: 'free', status: 'active' } });
         }
-        res.json(result.rows[0]);
+        res.json({ success: true, data: result.rows[0] });
     }
     catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 // POST /api/subscriptions/subscribe (Mock)

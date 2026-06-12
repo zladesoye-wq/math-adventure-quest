@@ -11,18 +11,18 @@ const router = (0, express_1.Router)();
 router.get('/achievements', async (req, res) => {
     try {
         const result = await database_1.default.query('SELECT * FROM achievements');
-        res.json(result.rows);
+        res.json({ success: true, data: result.rows });
     }
     catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 // GET /api/rewards/student
 router.get('/student', auth_1.authenticate, async (req, res) => {
     try {
         if (req.user.role !== 'student') {
-            return res.status(403).json({ message: 'Student context required' });
+            return res.status(403).json({ success: false, error: 'Student context required' });
         }
         const studentId = req.user.id;
         const achievementsRes = await database_1.default.query(`
@@ -33,20 +33,23 @@ router.get('/student', auth_1.authenticate, async (req, res) => {
     `, [studentId]);
         const rewardsRes = await database_1.default.query('SELECT * FROM rewards WHERE student_id = $1', [studentId]);
         res.json({
-            achievements: achievementsRes.rows,
-            rewards: rewardsRes.rows
+            success: true,
+            data: {
+                achievements: achievementsRes.rows,
+                rewards: rewardsRes.rows
+            }
         });
     }
     catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 // POST /api/rewards/claim-daily
 router.post('/claim-daily', auth_1.authenticate, async (req, res) => {
     try {
         if (req.user.role !== 'student') {
-            return res.status(403).json({ message: 'Student context required' });
+            return res.status(403).json({ success: false, error: 'Student context required' });
         }
         const studentId = req.user.id;
         const today = new Date().toISOString().split('T')[0];
@@ -55,7 +58,7 @@ router.post('/claim-daily', auth_1.authenticate, async (req, res) => {
         if (streakRes.rows.length > 0) {
             const lastClaim = streakRes.rows[0].last_claim_date;
             if (lastClaim === today) {
-                return res.status(400).json({ message: 'Daily reward already claimed today' });
+                return res.status(400).json({ success: false, error: 'Daily reward already claimed today' });
             }
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
@@ -77,12 +80,19 @@ router.post('/claim-daily', auth_1.authenticate, async (req, res) => {
             studentId, 'currency', 'coins', coinsReward
         ]);
         await database_1.default.query('COMMIT');
-        res.json({ message: 'Daily reward claimed!', coinsGained: coinsReward, streakCount });
+        res.json({
+            success: true,
+            data: {
+                message: 'Daily reward claimed!',
+                coinsGained: coinsReward,
+                streakCount
+            }
+        });
     }
     catch (error) {
         await database_1.default.query('ROLLBACK');
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 exports.default = router;

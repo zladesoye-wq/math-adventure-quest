@@ -7,7 +7,21 @@ import apiRouter from './routes';
 const app: Express = express();
 
 // Middleware
-app.use(helmet()); // Security headers
+// security headers
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-eval'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        connectSrc: ["'self'", "ws:", "wss:"],
+      },
+    },
+  })
+);
 app.use(morgan('dev')); // Logging
 app.use(cors()); // CORS
 app.use(express.json()); // Parse JSON bodies
