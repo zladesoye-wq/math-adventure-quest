@@ -93,21 +93,42 @@ router.post('/login', async (req, res, next) => {
 });
 
 // GET /api/auth/me
+// Returns the currently-authenticated user. Handles BOTH parent and student
+// tokens. Previously this only looked up parents, so any student token caused
+// a 404 here — which in turn made the client wipe the stored token and break
+// the whole student session.
 router.get('/me', authenticate, async (req: AuthRequest, res, next) => {
   try {
+    if (req.user!.role === 'student') {
+      const student = await findStudentById(req.user!.id);
+      if (!student) {
+        return res.status(404).json({ success: false, error: 'Student not found' });
+      }
+      return res.json({
+        success: true,
+        data: {
+          id: student.id,
+          name: student.name,
+          role: 'student',
+          parentId: student.parent_id,
+        },
+      });
+    }
+
     const parent = await findParentById(req.user!.id);
     if (!parent) {
       return res.status(404).json({ success: false, error: 'Parent not found' });
     }
-    const students = await getStudentsByParentId(parent.id);
+    // Touch students so the call mirrors prior behavior; not returned in payload.
+    await getStudentsByParentId(parent.id);
     res.json({
       success: true,
       data: {
         id: parent.id,
         email: parent.email,
         name: parent.name,
-        role: 'parent'
-      }
+        role: 'parent',
+      },
     });
   } catch (error) {
     next(error);

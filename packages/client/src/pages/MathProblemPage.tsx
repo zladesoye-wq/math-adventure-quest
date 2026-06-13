@@ -1,21 +1,91 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useProblem, useSubmitAnswer } from '../hooks/useStudentData';
-import { LoadingSpinner, ErrorDisplay } from '../hooks/useApi';
+import { useSubmitAnswer } from '../hooks/useStudentData';
 import MathProblemUI from '../components/game/MathProblem';
 import ProgressBar from '../components/common/ProgressBar';
 import Button from '../components/common/Button';
-import type { MathProblem } from '../types';
+import type { MathProblem, MathOperation } from '../types';
 
-// Fallback problems if API is not available
-const FALLBACK_PROBLEMS: MathProblem[] = [
-  { id: 'p1', operation: 'addition', operandA: 12, operandB: 8, answer: 20, displayText: '12 + 8 = ?', difficulty: 'easy', hints: ['Try counting on your fingers!', '12 + 8 is the same as 12 + 10 - 2'] },
-  { id: 'p2', operation: 'addition', operandA: 25, operandB: 17, answer: 42, displayText: '25 + 17 = ?', difficulty: 'medium', hints: ['Break it down: 25 + 10 = 35, then + 7', 'Or try 20 + 17 = 37, then + 5'] },
-  { id: 'p3', operation: 'addition', operandA: 45, operandB: 38, answer: 83, displayText: '45 + 38 = ?', difficulty: 'medium', hints: ['40 + 30 = 70, then 5 + 8 = 13', '70 + 13 = ?'], options: [73, 83, 93, 103] },
-  { id: 'p4', operation: 'subtraction', operandA: 50, operandB: 23, answer: 27, displayText: '50 - 23 = ?', difficulty: 'medium', hints: ['50 - 20 = 30, then - 3', 'Or count backwards from 50'], options: [27, 33, 37, 23] },
-  { id: 'p5', operation: 'addition', operandA: 100, operandB: 99, answer: 199, displayText: '100 + 99 = ?', difficulty: 'hard', hints: ['100 + 100 = 200, then subtract 1', 'Think about what is one less than 200'], options: [189, 199, 1999, 109] },
-];
+// ── World ID → Operation mapping ─────────────────────────────────────────────
+// Hardcoded UUIDs from the database so we don't need to wait for useWorld to load.
+const WORLD_OPERATIONS: Record<string, MathOperation> = {
+  '8a47d304-3876-4c2f-9569-4e39543104a1': 'addition',        // Addition Forest
+  '103d259d-4786-4357-a327-7b48b7f02beb': 'subtraction',     // Subtraction Mountain
+  'b94abf03-45e6-4235-a7bd-d7036895170e': 'multiplication', // Multiplication Kingdom
+  '42cb1952-3b46-4028-8cd1-c3a8b1153a20': 'division',        // Division Desert
+  'b64513dc-cb3a-485d-998d-d04f4b8de63e': 'addition',        // Fraction Castle (simplified)
+};
+
+// ── Problem Generator ─────────────────────────────────────────────────────────
+
+function makeProblem(op: MathOperation, index: number): MathProblem {
+  let a: number, b: number, answer: number, displayText: string, hints: string[];
+
+  switch (op) {
+    case 'subtraction': {
+      a = Math.floor(Math.random() * 40) + 10;
+      b = Math.floor(Math.random() * (a - 1)) + 1;
+      answer = a - b;
+      displayText = `${a} - ${b} = ?`;
+      hints = [
+        `Start at ${a} and count back ${b}`,
+        `${a} - ${Math.ceil(b / 2)} = ${a - Math.ceil(b / 2)}, then subtract ${b - Math.ceil(b / 2)} more`,
+      ];
+      break;
+    }
+    case 'multiplication': {
+      a = Math.floor(Math.random() * 10) + 1;
+      b = Math.floor(Math.random() * 10) + 1;
+      answer = a * b;
+      displayText = `${a} × ${b} = ?`;
+      hints = [
+        `Add ${a} to itself ${b} times`,
+        `${a} × ${Math.floor(b / 2)} = ${a * Math.floor(b / 2)}, then add ${a} more ${b - Math.floor(b / 2)} time(s)`,
+      ];
+      break;
+    }
+    case 'division': {
+      b = Math.floor(Math.random() * 9) + 2;
+      answer = Math.floor(Math.random() * 10) + 1;
+      a = b * answer;
+      displayText = `${a} ÷ ${b} = ?`;
+      hints = [
+        `How many groups of ${b} fit into ${a}?`,
+        `${b} × ${Math.floor(answer / 2)} = ${b * Math.floor(answer / 2)} — how many more ${b}s to reach ${a}?`,
+      ];
+      break;
+    }
+    default: {
+      a = Math.floor(Math.random() * 30) + 1;
+      b = Math.floor(Math.random() * 30) + 1;
+      answer = a + b;
+      displayText = `${a} + ${b} = ?`;
+      hints = [
+        `Count on from ${a}: add ${b} more`,
+        `${a} + ${Math.floor(b / 2)} = ${a + Math.floor(b / 2)}, then add ${b - Math.floor(b / 2)} more`,
+      ];
+    }
+  }
+
+  return {
+    id: `gen-${op}-${index}-${Date.now()}`,
+    operation: op,
+    operandA: a,
+    operandB: b,
+    answer,
+    displayText,
+    difficulty: 'easy',
+    hints,
+  };
+}
+
+function generateProblems(worldId: string, count = 5): MathProblem[] {
+  const op = WORLD_OPERATIONS[worldId] || 'addition';
+  return Array.from({ length: count }, (_, i) => makeProblem(op, i));
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function MathProblemPage() {
   const { worldId, levelId: _levelId } = useParams<{ worldId: string; levelId: string }>();
@@ -23,10 +93,11 @@ export default function MathProblemPage() {
   const { user } = useAuth();
   const studentId = user?.role === 'student' ? user.id : undefined;
 
-  const { problem, loading: problemLoading, error: problemError, refetch: refetchProblem } = useProblem(studentId, worldId, _levelId);
   const { submit } = useSubmitAnswer();
 
-  const [problemQueue, setProblemQueue] = useState<MathProblem[]>([]);
+  const [problemQueue, setProblemQueue] = useState<MathProblem[]>(() =>
+    generateProblems(worldId || '', 5)
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [streak, setStreak] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
@@ -34,16 +105,7 @@ export default function MathProblemPage() {
   const [problemsDone, setProblemsDone] = useState(0);
   const [showCompletion, setShowCompletion] = useState(false);
 
-  // Initialize problem queue from API or fallback
-  useEffect(() => {
-    if (problem && !problemQueue.length) {
-      setProblemQueue([problem, ...FALLBACK_PROBLEMS.slice(1)]);
-    } else if (!problemLoading && !problem && FALLBACK_PROBLEMS.length > 0 && !problemQueue.length) {
-      setProblemQueue(FALLBACK_PROBLEMS);
-    }
-  }, [problem, problemLoading, problemQueue.length]);
-
-  const currentProblem = problemQueue[currentIndex] || problemQueue[0];
+  const currentProblem = problemQueue[currentIndex] ?? problemQueue[0];
 
   const handleAnswer = useCallback(async (answer: number, timeTaken: number) => {
     if (!currentProblem) return;
@@ -58,17 +120,14 @@ export default function MathProblemPage() {
     setProblemsDone((prev) => prev + 1);
     setHintsUsed(0);
 
-    // Submit answer to API if student is logged in
-    if (studentId) {
-      submit(studentId, {
-        problemId: currentProblem.id,
-        answerGiven: answer,
-        timeTaken,
-        hintsUsed,
-      });
-    }
-
-    // Advance after 5 problems or show completion
+if (studentId && !currentProblem.id.startsWith('gen-')) {
+  submit(studentId, {
+    problemId: currentProblem.id,
+    answerGiven: answer,
+    timeTaken,
+    hintsUsed,
+  });
+}
     if (problemsDone >= 4 || currentIndex >= problemQueue.length - 1) {
       setTimeout(() => setShowCompletion(true), 500);
     } else {
@@ -81,25 +140,14 @@ export default function MathProblemPage() {
   }, []);
 
   const handleRetry = () => {
+    setProblemQueue(generateProblems(worldId || '', 5));
     setCurrentIndex(0);
     setStreak(0);
     setHintsUsed(0);
     setScore(0);
     setProblemsDone(0);
     setShowCompletion(false);
-    if (studentId && worldId && _levelId) {
-      refetchProblem();
-    }
-    setProblemQueue([]);
   };
-
-  if ((problemLoading && !problem && problemQueue.length === 0) || (!currentProblem && problemLoading)) {
-    return <LoadingSpinner message="Getting your problem ready..." />;
-  }
-
-  if (problemError && !problem && problemQueue.length === 0) {
-    return <ErrorDisplay message={problemError} onRetry={refetchProblem} />;
-  }
 
   if (!currentProblem) {
     return (
@@ -124,7 +172,11 @@ export default function MathProblemPage() {
           <div className="kid-card mb-6">
             <div className="text-4xl mb-4">
               {[1, 2, 3].map((s) => (
-                <span key={s} className={`inline-block mx-1 animate-star-pop ${s <= starsEarned ? '' : 'opacity-20'}`} style={{ animationDelay: `${s * 0.3}s` }}>
+                <span
+                  key={s}
+                  className={`inline-block mx-1 animate-star-pop ${s <= starsEarned ? '' : 'opacity-20'}`}
+                  style={{ animationDelay: `${s * 0.3}s` }}
+                >
                   ⭐
                 </span>
               ))}
@@ -152,7 +204,6 @@ export default function MathProblemPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
-      {/* Progress header */}
       <div className="flex items-center justify-between mb-6">
         <button onClick={() => navigate(`/world/${worldId}`)} className="text-gray-400 hover:text-gray-600">
           ← Back
@@ -163,7 +214,6 @@ export default function MathProblemPage() {
         </div>
       </div>
 
-      {/* Math Problem */}
       <MathProblemUI
         problem={currentProblem}
         onAnswer={handleAnswer}

@@ -7,12 +7,17 @@ import LevelPath from '../components/game/LevelPath';
 import type { Level } from '../types';
 
 const WORLD_META: Record<string, { name: string; emoji: string; color: string; desc: string }> = {
-  'addition-forest': { name: 'Addition Forest', emoji: '🌳', color: 'from-green-400 to-emerald-600', desc: 'Master addition from simple sums to triple-digit challenges!' },
-  'subtraction-mountain': { name: 'Subtraction Mountain', emoji: '⛰️', color: 'from-purple-400 to-violet-600', desc: 'Climb higher with subtraction skills!' },
-  'multiplication-kingdom': { name: 'Multiplication Kingdom', emoji: '👑', color: 'from-amber-400 to-yellow-600', desc: 'Times tables become your superpower!' },
-  'division-desert': { name: 'Division Desert', emoji: '🏜️', color: 'from-orange-400 to-orange-600', desc: 'Divide and conquer!' },
-  'fraction-castle': { name: 'Fraction Castle', emoji: '🥧', color: 'from-pink-400 to-rose-600', desc: 'Pies, pizzas, and perfect fractions!' },
+  'addition-forest':        { name: 'Addition Forest',        emoji: '🌳', color: 'from-green-400 to-emerald-600',  desc: 'Master addition from simple sums to triple-digit challenges!' },
+  'subtraction-mountain':   { name: 'Subtraction Mountain',   emoji: '⛰️', color: 'from-purple-400 to-violet-600',  desc: 'Climb higher with subtraction skills!' },
+  'multiplication-kingdom': { name: 'Multiplication Kingdom', emoji: '👑', color: 'from-amber-400 to-yellow-600',   desc: 'Times tables become your superpower!' },
+  'division-desert':        { name: 'Division Desert',        emoji: '🏜️', color: 'from-orange-400 to-orange-600',  desc: 'Divide and conquer!' },
+  'fraction-castle':        { name: 'Fraction Castle',        emoji: '🥧', color: 'from-pink-400 to-rose-600',      desc: 'Pies, pizzas, and perfect fractions!' },
 };
+
+/** Convert a DB world name like "Addition Forest" → "addition-forest" */
+function nameToSlug(name: string = ''): string {
+  return name.toLowerCase().replace(/\s+/g, '-');
+}
 
 export default function WorldView() {
   const { worldId } = useParams<{ worldId: string }>();
@@ -21,11 +26,18 @@ export default function WorldView() {
   const studentId = user?.role === 'student' ? user.id : undefined;
 
   const { world, loading, error, refetch } = useWorld(studentId, worldId);
-  const meta = WORLD_META[worldId || ''] || WORLD_META['addition-forest'];
+
+  // Derive display metadata from the world name returned by the API.
+  // Previously this used the UUID worldId as a key, which never matched.
+  const meta =
+    (world?.name ? WORLD_META[nameToSlug(world.name)] : null) ||
+    WORLD_META['addition-forest'];
 
   const levels = world?.levels || [];
   const completedCount = levels.filter((l: Level) => l.status === 'completed').length;
-  const totalStars = levels.reduce((sum: number, l: Level) => sum + l.stars, 0);
+  // Guard against undefined stars (new students have no progress yet)
+  const totalStars = levels.reduce((sum: number, l: Level) => sum + (l.stars || 0), 0);
+  const maxStars = levels.length * 3;
 
   const handleLevelSelect = (levelId: string) => {
     navigate(`/world/${worldId}/level/${levelId}`);
@@ -41,10 +53,12 @@ export default function WorldView() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <div className="text-6xl">{meta.emoji}</div>
           <div className="flex-1">
-            <h1 className="text-3xl md:text-4xl font-display font-bold">{meta.name}</h1>
+            <h1 className="text-3xl md:text-4xl font-display font-bold">
+              {world?.name || meta.name}
+            </h1>
             <p className="text-white/80 text-lg mt-1">{meta.desc}</p>
             <div className="flex items-center gap-4 mt-3 text-white/90 text-sm">
-              <span>⭐ {totalStars} / {levels.length * 3} stars</span>
+              <span>⭐ {totalStars} / {maxStars} stars</span>
               <span>•</span>
               <span>{completedCount} / {levels.length} levels</span>
             </div>
