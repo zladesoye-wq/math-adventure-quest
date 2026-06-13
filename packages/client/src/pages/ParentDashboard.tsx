@@ -6,6 +6,7 @@ import Button from '../components/common/Button';
 import { useAllChildrenProgress } from '../hooks/useParentData';
 import { LoadingSpinner, ErrorDisplay } from '../hooks/useApi';
 import { useAuth } from '../context/AuthContext';
+import apiClient from '../api/client';
 import type { ChildProgress } from '../types';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -13,6 +14,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export default function ParentDashboard() {
   const { children: childrenProgress, loading, error, refetch } = useAllChildrenProgress();
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [showAddChild, setShowAddChild] = useState(false);
   const { switchToStudent } = useAuth();
   const navigate = useNavigate();
 
@@ -32,6 +34,12 @@ export default function ParentDashboard() {
     }
   };
 
+  const handleChildAdded = (newChildId: string) => {
+    setShowAddChild(false);
+    setSelectedChildId(newChildId);
+    refetch();
+  };
+
   const child = childrenProgress?.find((c: ChildProgress) => c.student.id === selectedChildId) || null;
 
   if (loading && !childrenProgress) {
@@ -49,8 +57,13 @@ export default function ParentDashboard() {
           <div className="text-6xl mb-4">👨‍👩‍👧‍👦</div>
           <h2 className="text-2xl font-display font-bold text-gray-800 mb-2">Welcome to Your Dashboard!</h2>
           <p className="text-gray-500 mb-6">Add a child to start tracking their math adventure!</p>
-          <Button variant="primary" icon="👶" size="lg">Add Your First Child</Button>
+          <Button variant="primary" icon="👶" size="lg" onClick={() => setShowAddChild(true)}>
+            Add Your First Child
+          </Button>
         </div>
+        {showAddChild && (
+          <AddChildModal onClose={() => setShowAddChild(false)} onAdded={handleChildAdded} />
+        )}
       </div>
     );
   }
@@ -62,7 +75,9 @@ export default function ParentDashboard() {
           <h1 className="text-3xl font-display font-bold text-gray-800">📊 Parent Dashboard</h1>
           <p className="text-gray-500">Track your child's math adventure progress</p>
         </div>
-        <Button variant="primary" icon="👶" size="sm">Add Child</Button>
+        <Button variant="primary" icon="👶" size="sm" onClick={() => setShowAddChild(true)}>
+          Add Child
+        </Button>
       </div>
 
       {/* Child selector */}
@@ -90,14 +105,161 @@ export default function ParentDashboard() {
         })}
       </div>
 
-      {child ? <ChildProgressView child={child} /> : null}
+      {child ? <ChildProgressView child={child} onPlay={handleSwitchToStudent} /> : null}
+
+      {showAddChild && (
+        <AddChildModal onClose={() => setShowAddChild(false)} onAdded={handleChildAdded} />
+      )}
+    </div>
+  );
+}
+
+// ── Add Child Modal ──────────────────────────────────────────
+
+function AddChildModal({
+  onClose,
+  onAdded,
+}: {
+  onClose: () => void;
+  onAdded: (newChildId: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [age, setAge] = useState('');
+  const [grade, setGrade] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    setFormError(null);
+
+    const trimmedName = name.trim();
+    const ageNum = Number(age);
+    const gradeNum = Number(grade);
+
+    if (!trimmedName) {
+      setFormError('Please enter your child\'s name.');
+      return;
+    }
+    if (!age || isNaN(ageNum) || ageNum < 3 || ageNum > 18) {
+      setFormError('Please enter an age between 3 and 18.');
+      return;
+    }
+    if (grade === '' || isNaN(gradeNum) || gradeNum < 0 || gradeNum > 12) {
+      setFormError('Please enter a grade between 0 (Kindergarten) and 12.');
+      return;
+    }
+
+    setSubmitting(true);
+    const result = await apiClient.addStudent({
+      name: trimmedName,
+      age: ageNum,
+      grade: gradeNum,
+    });
+    setSubmitting(false);
+
+    if (result.success && result.data) {
+      onAdded(result.data.id);
+    } else {
+      setFormError(result.error || 'Could not add child. Please try again.');
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-display font-bold text-gray-800">👶 Add a Child</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="child-name">
+              Name
+            </label>
+            <input
+              id="child-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Daniella"
+              className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 outline-none"
+              autoFocus
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="child-age">
+                Age
+              </label>
+              <input
+                id="child-age"
+                type="number"
+                min={3}
+                max={18}
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                placeholder="e.g. 9"
+                className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="child-grade">
+                Grade
+              </label>
+              <input
+                id="child-grade"
+                type="number"
+                min={0}
+                max={12}
+                value={grade}
+                onChange={(e) => setGrade(e.target.value)}
+                placeholder="e.g. 4"
+                className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 outline-none"
+              />
+            </div>
+          </div>
+
+          {formError && (
+            <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-2">{formError}</p>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <Button variant="ghost" fullWidth onClick={onClose} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button variant="primary" icon="👶" fullWidth onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Adding...' : 'Add Child'}
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ── Child Progress View ──────────────────────────────────────
 
-function ChildProgressView({ child }: { child: ChildProgress }) {
+function ChildProgressView({
+  child,
+  onPlay,
+}: {
+  child: ChildProgress;
+  onPlay: (studentId: string) => void;
+}) {
   const s = child.student.stats;
   const stats = {
     problemsSolved: s?.problemsSolved || 0,
@@ -119,7 +281,7 @@ function ChildProgressView({ child }: { child: ChildProgress }) {
             { icon: '🧮', label: 'Problems Solved', value: stats.problemsSolved },
             { icon: '🎯', label: 'Accuracy', value: `${stats.accuracy}%` },
             { icon: '🔥', label: 'Day Streak', value: stats.streak },
-            { icon: '🎮', label: 'Mode', value: <button onClick={() => handleSwitchToStudent(child.student.id)} className="text-primary-600 hover:underline">Play</button> },
+            { icon: '🎮', label: 'Mode', value: <button onClick={() => onPlay(child.student.id)} className="text-primary-600 hover:underline">Play</button> },
           ].map((stat) => (
             <Card key={stat.label} className="text-center !p-4">
               <div className="text-2xl">{stat.icon}</div>
