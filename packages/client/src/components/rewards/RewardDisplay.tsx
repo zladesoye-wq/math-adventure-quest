@@ -13,7 +13,7 @@ export default function CoinDisplay({ coins, gems, stars, size = 'md' }: CoinDis
     <div className={`flex items-center ${sizeClasses}`}>
       <div className="flex items-center gap-1">
         <span className={iconSize}>🪙</span>
-        <span className="font-display font-bold text-amber-500">{coins.toLocaleString()}</span>
+        <span className="font-display font-bold text-amber-500">{(coins ?? 0).toLocaleString()}</span>
       </div>
       {gems !== undefined && (
         <div className="flex items-center gap-1">
@@ -91,6 +91,8 @@ const chestColors: Record<string, string> = {
 
 export function RewardChestCard({ type, status, progress, maxProgress, onOpen }: RewardChestProps) {
   const isAvailable = status === 'available';
+  const safeProgress = progress ?? 0;
+  const safeMax = maxProgress || 1;
 
   return (
     <button
@@ -110,10 +112,10 @@ export function RewardChestCard({ type, status, progress, maxProgress, onOpen }:
       <div className="mt-2 w-full bg-white/30 rounded-full h-2">
         <div
           className="bg-white/80 h-full rounded-full transition-all"
-          style={{ width: `${(progress / maxProgress) * 100}%` }}
+          style={{ width: `${(safeProgress / safeMax) * 100}%` }}
         />
       </div>
-      <p className="text-white/80 text-xs mt-1">{progress}/{maxProgress}</p>
+      <p className="text-white/80 text-xs mt-1">{safeProgress}/{safeMax}</p>
     </button>
   );
 }
